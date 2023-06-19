@@ -87,7 +87,7 @@ struct CliCommandBinding {
      * @param args - string of args (if tokenizeArgs is false) or tokens otherwise
      * @param context
      */
-    void (*binding)(EmbeddedCli *cli, char *args, void *context);
+    int (*binding)(EmbeddedCli *cli, char *args, void *context);
 };
 
 struct EmbeddedCli {
@@ -104,6 +104,13 @@ struct EmbeddedCli {
      * @param c   - pointer to string to write, needs to be null terminated
      */
     void (*writeString)(EmbeddedCli *cli, const char* c);
+
+    /**
+     * Called after command is received and binding function is called.
+     * @param cli    - pointer to cli that executed this function
+     * @param result - result of binding function
+     */
+    void (*postCommand)(EmbeddedCli *cli, int result);
 
 
     /**

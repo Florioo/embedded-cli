@@ -244,7 +244,7 @@ static void initInternalBindings(EmbeddedCli *cli);
  * @param tokens
  * @param context - not used
  */
-static void onHelp(EmbeddedCli *cli, char *tokens, void *context);
+static int onHelp(EmbeddedCli *cli, char *tokens, void *context);
 
 /**
  * Show error about unknown command
@@ -796,7 +796,11 @@ static void parseCommand(EmbeddedCli *cli) {
                 embeddedCliTokenizeArgs(cmdArgs);
             // currently, output is blank line, so we can just print directly
             SET_FLAG(impl->flags, CLI_FLAG_DIRECT_PRINT);
-            impl->bindings[i].binding(cli, cmdArgs, impl->bindings[i].context);
+            int result = impl->bindings[i].binding(cli, cmdArgs, impl->bindings[i].context);
+
+            if (cli->postCommand)
+                cli->postCommand(cli, result);
+            
             UNSET_U8FLAG(impl->flags, CLI_FLAG_DIRECT_PRINT);
             return;
         }
@@ -815,6 +819,9 @@ static void parseCommand(EmbeddedCli *cli) {
         UNSET_U8FLAG(impl->flags, CLI_FLAG_DIRECT_PRINT);
     } else {
         onUnknownCommand(cli, cmdName);
+        if (cli->postCommand)
+            cli->postCommand(cli, 1);
+            
     }
 }
 
@@ -829,14 +836,14 @@ static void initInternalBindings(EmbeddedCli *cli) {
     embeddedCliAddBinding(cli, b);
 }
 
-static void onHelp(EmbeddedCli *cli, char *tokens, void *context) {
+static int onHelp(EmbeddedCli *cli, char *tokens, void *context) {
     UNUSED(context);
     PREPARE_IMPL(cli);
 
     if (impl->bindingsCount == 0) {
         writeToOutput(cli, "Help is not available");
         writeToOutput(cli, lineBreak);
-        return;
+        return 1;
     }
 
     uint16_t tokenCount = embeddedCliGetTokenCount(tokens);
@@ -873,13 +880,19 @@ static void onHelp(EmbeddedCli *cli, char *tokens, void *context) {
         } else if (found) {
             writeToOutput(cli, "Help is not available");
             writeToOutput(cli, lineBreak);
+            return 1;
+
         } else {
             onUnknownCommand(cli, cmdName);
+            return 1;
+
         }
     } else {
         writeToOutput(cli, "Command \"help\" receives one or zero arguments");
         writeToOutput(cli, lineBreak);
     }
+    
+    return 0;
 }
 
 static void onUnknownCommand(EmbeddedCli *cli, const char *name) {
