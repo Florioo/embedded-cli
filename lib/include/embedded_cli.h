@@ -99,6 +99,14 @@ struct EmbeddedCli {
     void (*writeChar)(EmbeddedCli *cli, char c);
 
     /**
+     * Should write string to connection
+     * @param cli - pointer to cli that executed this function
+     * @param c   - pointer to string to write, needs to be null terminated
+     */
+    void (*writeString)(EmbeddedCli *cli, const char* c);
+
+
+    /**
      * Called when command is received and command not found in list of
      * command bindings (or binding function is null).
      * @param cli     - pointer to cli that executed this function

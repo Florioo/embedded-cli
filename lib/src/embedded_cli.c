@@ -1029,6 +1029,12 @@ static void clearCurrentLine(EmbeddedCli *cli) {
 }
 
 static void writeToOutput(EmbeddedCli *cli, const char *str) {
+
+    if (cli->writeString){
+        cli->writeString(cli, str);
+        return;
+    }
+
     size_t len = strlen(str);
 
     for (size_t i = 0; i < len; ++i) {
