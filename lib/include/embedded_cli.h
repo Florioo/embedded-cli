@@ -83,11 +83,11 @@ struct CliCommandBinding {
     /**
      * Binding function for when command is received.
      * If null, default callback (onCommand) will be called.
-     * @param cli - pointer to cli that is calling this binding
+     * @param handle - pointer to handle
      * @param args - string of args (if tokenizeArgs is false) or tokens otherwise
      * @param context
      */
-    int (*binding)(EmbeddedCli *cli, char *args, void *context);
+    int (*binding)(void *handle, char *args, void *context);
 };
 
 struct EmbeddedCli {
@@ -110,7 +110,7 @@ struct EmbeddedCli {
      * @param cli    - pointer to cli that executed this function
      * @param result - result of binding function
      */
-    void (*postCommand)(EmbeddedCli *cli, int result);
+    void (*postCommand)(void *context, uint8_t result);
 
 
     /**
@@ -246,7 +246,14 @@ void embeddedCliReceiveChar(EmbeddedCli *cli, char c);
  * Process rx/tx buffers. Command callbacks are called from here
  * @param cli
  */
-void embeddedCliProcess(EmbeddedCli *cli);
+void embeddedCliProcess(EmbeddedCli *cli, void * handle);
+
+/**
+ * Parse command and call appropriate binding
+ * @param cli
+ * @param command
+*/
+void embeddedCliParseDirectCommand(EmbeddedCli *cli, uint8_t *command, uint16_t length, void * handle);
 
 /**
  * Add specified binding to list of bindings. If list is already full, binding

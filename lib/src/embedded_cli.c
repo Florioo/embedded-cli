@@ -224,13 +224,13 @@ static void onCharInput(EmbeddedCli *cli, char c);
  * @param cli
  * @param c
  */
-static void onControlInput(EmbeddedCli *cli, char c);
+static void onControlInput(EmbeddedCli *cli, char c, void *handle);
 
 /**
  * Parse command in buffer and execute callback
  * @param cli
  */
-static void parseCommand(EmbeddedCli *cli);
+static void parseCommand(EmbeddedCli *cli, void * handle);
 
 /**
  * Setup bindings for internal commands, like help
@@ -452,7 +452,6 @@ EmbeddedCli *embeddedCliNew(EmbeddedCliConfig *config) {
     impl->maxBindingsCount = (uint16_t) (config->maxBindingCount + cliInternalBindingCount);
     impl->lastChar = '\0';
     impl->invitation = config->invitation;
-
     initInternalBindings(cli);
 
     return cli;
@@ -470,7 +469,7 @@ void embeddedCliReceiveChar(EmbeddedCli *cli, char c) {
     }
 }
 
-void embeddedCliProcess(EmbeddedCli *cli) {
+void embeddedCliProcess(EmbeddedCli *cli, void * handle) {
     if (cli->writeChar == NULL)
         return;
 
@@ -491,7 +490,7 @@ void embeddedCliProcess(EmbeddedCli *cli) {
             //enter escape mode
             SET_FLAG(impl->flags, CLI_FLAG_ESCAPE_MODE);
         } else if (isControlChar(c)) {
-            onControlInput(cli, c);
+            onControlInput(cli, c, handle);
         } else if (isDisplayableChar(c)) {
             onCharInput(cli, c);
         }
@@ -703,9 +702,9 @@ static void onCharInput(EmbeddedCli *cli, char c) {
     cli->writeChar(cli, c);
 }
 
-static void onControlInput(EmbeddedCli *cli, char c) {
+static void onControlInput(EmbeddedCli *cli, char c, void *handle) {
     PREPARE_IMPL(cli);
-
+    
     // process \r\n and \n\r as single \r\n command
     if ((impl->lastChar == '\r' && c == '\n') ||
         (impl->lastChar == '\n' && c == '\r'))
@@ -718,7 +717,7 @@ static void onControlInput(EmbeddedCli *cli, char c) {
         writeToOutput(cli, lineBreak);
 
         if (impl->cmdSize > 0)
-            parseCommand(cli);
+            parseCommand(cli, handle);
         impl->cmdSize = 0;
         impl->cmdBuffer[impl->cmdSize] = '\0';
         impl->inputLineLength = 0;
@@ -738,14 +737,16 @@ static void onControlInput(EmbeddedCli *cli, char c) {
     }
 
 }
+#include <stdio.h>
 
-static void parseCommand(EmbeddedCli *cli) {
+static void _parseCommand(EmbeddedCli *cli,  char * command_buffer, uint16_t command_size, bool direct_mode, void * handle)
+{
     PREPARE_IMPL(cli);
 
     bool isEmpty = true;
 
-    for (int i = 0; i < impl->cmdSize; ++i) {
-        if (impl->cmdBuffer[i] != ' ') {
+    for (int i = 0; i < command_size; ++i) {
+        if (command_buffer[i] != ' ') {
             isEmpty = false;
             break;
         }
@@ -753,35 +754,37 @@ static void parseCommand(EmbeddedCli *cli) {
     // do not process empty commands
     if (isEmpty)
         return;
-    // push command to history before buffer is modified
-    historyPut(&impl->history, impl->cmdBuffer);
+    
+    if (!direct_mode){
+        // push command to history before buffer is modified
+        historyPut(&impl->history, command_buffer);
+    }
 
     char *cmdName = NULL;
     char *cmdArgs = NULL;
     bool nameFinished = false;
 
     // find command name and command args inside command buffer
-    for (int i = 0; i < impl->cmdSize; ++i) {
-        char c = impl->cmdBuffer[i];
+    for (int i = 0; i < command_size; ++i) {
+        char c = command_buffer[i];
 
         if (c == ' ') {
             // all spaces between name and args are filled with zeros
             // so name is a correct null-terminated string
             if (cmdArgs == NULL)
-                impl->cmdBuffer[i] = '\0';
+                command_buffer[i] = '\0';
             if (cmdName != NULL)
                 nameFinished = true;
 
         } else if (cmdName == NULL) {
-            cmdName = &impl->cmdBuffer[i];
+            cmdName = &command_buffer[i];
         } else if (cmdArgs == NULL && nameFinished) {
-            cmdArgs = &impl->cmdBuffer[i];
+            cmdArgs = &command_buffer[i];
         }
     }
-
     // we keep two last bytes in cmd buffer reserved so cmdSize is always by 2
     // less than cmdMaxSize
-    impl->cmdBuffer[impl->cmdSize + 1] = '\0';
+    command_buffer[command_size + 1] = '\0';
 
     if (cmdName == NULL)
         return;
@@ -794,17 +797,27 @@ static void parseCommand(EmbeddedCli *cli) {
 
             if (impl->bindings[i].tokenizeArgs)
                 embeddedCliTokenizeArgs(cmdArgs);
+
             // currently, output is blank line, so we can just print directly
-            SET_FLAG(impl->flags, CLI_FLAG_DIRECT_PRINT);
-            int result = impl->bindings[i].binding(cli, cmdArgs, impl->bindings[i].context);
+            if (!direct_mode){
+                SET_FLAG(impl->flags, CLI_FLAG_DIRECT_PRINT);
+            }
+
+            uint8_t result = impl->bindings[i].binding(handle, cmdArgs, impl->bindings[i].context);
 
             if (cli->postCommand)
-                cli->postCommand(cli, result);
-            
-            UNSET_U8FLAG(impl->flags, CLI_FLAG_DIRECT_PRINT);
+                cli->postCommand(handle, result);
+
+            if (!direct_mode){
+                 UNSET_U8FLAG(impl->flags, CLI_FLAG_DIRECT_PRINT);
+            }
             return;
         }
     }
+
+    // TODO handle direct mode if there is no binding
+    if (direct_mode)
+        return;
 
     // command not found in bindings or binding was null
     // try to call default callback
@@ -820,10 +833,38 @@ static void parseCommand(EmbeddedCli *cli) {
     } else {
         onUnknownCommand(cli, cmdName);
         if (cli->postCommand)
-            cli->postCommand(cli, 1);
+            cli->postCommand(handle, 1);
             
     }
 }
+
+void embeddedCliParseDirectCommand(EmbeddedCli *cli, uint8_t *command,uint16_t length, void * handle) {
+    
+   
+    //Copy command to buffer so it can be modified
+    //Also add extra space for double null termination
+   char * buffer = malloc(length + 2);
+   strncpy(buffer, (char*) command, length);
+    buffer[length] = '\0';
+    // printf("Parsing direct command: '%s'\n", buffer);
+
+   //Parse the command in direct mode
+   _parseCommand(cli, buffer, length, true, handle);
+   
+   //Free the buffer
+   free(buffer);
+}
+static void parseCommand(EmbeddedCli *cli, void * handle) {
+    //Parse the command in REPL mode
+    PREPARE_IMPL(cli);
+    // printf("Parsing command: '%s'\n", impl->cmdBuffer);
+    // printf("size: %d\n", impl->cmdSize);
+    // printf("handle: %p\n", handle);
+    // printf("cli: %p\n", cli);
+
+    _parseCommand(cli, impl->cmdBuffer, impl->cmdSize, false, handle);
+}
+
 
 static void initInternalBindings(EmbeddedCli *cli) {
     CliCommandBinding b = {
@@ -837,6 +878,9 @@ static void initInternalBindings(EmbeddedCli *cli) {
 }
 
 static int onHelp(EmbeddedCli *cli, char *tokens, void *context) {
+    //Dirty hack to get the cli pointer 
+    cli = *(EmbeddedCli **)cli;
+
     UNUSED(context);
     PREPARE_IMPL(cli);
 
