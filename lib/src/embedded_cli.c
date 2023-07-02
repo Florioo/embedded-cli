@@ -739,7 +739,7 @@ static void onControlInput(EmbeddedCli *cli, char c, void *handle) {
 }
 #include <stdio.h>
 
-static void _parseCommand(EmbeddedCli *cli,  char * command_buffer, uint16_t command_size, bool direct_mode, void * handle)
+static int _parseCommand(EmbeddedCli *cli,  char * command_buffer, uint16_t command_size, bool direct_mode, void * handle)
 {
     PREPARE_IMPL(cli);
 
@@ -753,7 +753,7 @@ static void _parseCommand(EmbeddedCli *cli,  char * command_buffer, uint16_t com
     }
     // do not process empty commands
     if (isEmpty)
-        return;
+        return 1;
     
     if (!direct_mode){
         // push command to history before buffer is modified
@@ -787,7 +787,7 @@ static void _parseCommand(EmbeddedCli *cli,  char * command_buffer, uint16_t com
     command_buffer[command_size + 1] = '\0';
 
     if (cmdName == NULL)
-        return;
+        return 1;
 
     // try to find command in bindings
     for (int i = 0; i < impl->bindingsCount; ++i) {
@@ -811,13 +811,16 @@ static void _parseCommand(EmbeddedCli *cli,  char * command_buffer, uint16_t com
             if (!direct_mode){
                  UNSET_U8FLAG(impl->flags, CLI_FLAG_DIRECT_PRINT);
             }
-            return;
+            return 0;
         }
     }
 
     // TODO handle direct mode if there is no binding
-    if (direct_mode)
-        return;
+    if (direct_mode){
+        // Send error
+        
+        return 1;
+    }
 
     // command not found in bindings or binding was null
     // try to call default callback
@@ -836,9 +839,10 @@ static void _parseCommand(EmbeddedCli *cli,  char * command_buffer, uint16_t com
             cli->postCommand(handle, 1);
             
     }
+    return 1;
 }
 
-void embeddedCliParseDirectCommand(EmbeddedCli *cli, uint8_t *command,uint16_t length, void * handle) {
+int embeddedCliParseDirectCommand(EmbeddedCli *cli, uint8_t *command,uint16_t length, void * handle) {
     
    
     //Copy command to buffer so it can be modified
@@ -849,11 +853,14 @@ void embeddedCliParseDirectCommand(EmbeddedCli *cli, uint8_t *command,uint16_t l
     // printf("Parsing direct command: '%s'\n", buffer);
 
    //Parse the command in direct mode
-   _parseCommand(cli, buffer, length, true, handle);
+   int ret = _parseCommand(cli, buffer, length, true, handle);
    
    //Free the buffer
    free(buffer);
+   return ret;
 }
+
+
 static void parseCommand(EmbeddedCli *cli, void * handle) {
     //Parse the command in REPL mode
     PREPARE_IMPL(cli);

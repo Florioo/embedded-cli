@@ -252,8 +252,11 @@ void embeddedCliProcess(EmbeddedCli *cli, void * handle);
  * Parse command and call appropriate binding
  * @param cli
  * @param command
+ * @param length
+ * @param handle
+ * @return true if command was found and binding was called, false otherwise
 */
-void embeddedCliParseDirectCommand(EmbeddedCli *cli, uint8_t *command, uint16_t length, void * handle);
+int embeddedCliParseDirectCommand(EmbeddedCli *cli, uint8_t *command, uint16_t length, void * handle);
 
 /**
  * Add specified binding to list of bindings. If list is already full, binding
