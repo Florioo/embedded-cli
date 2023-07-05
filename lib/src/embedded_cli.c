@@ -879,7 +879,7 @@ static void initInternalBindings(EmbeddedCli *cli) {
             "Print list of commands",
             true,
             NULL,
-            onHelp
+            (void*)onHelp
     };
     embeddedCliAddBinding(cli, b);
 }
